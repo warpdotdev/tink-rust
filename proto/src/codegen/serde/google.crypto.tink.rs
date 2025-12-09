@@ -458,8 +458,8 @@ pub enum EcdsaSignatureEncoding {
     /// The signature is encoded using ASN.1
     /// (<https://tools.ietf.org/html/rfc5480#appendix-A>):
     /// ECDSA-Sig-Value :: = SEQUENCE {
-    /// r INTEGER,
-    /// s INTEGER
+    ///   r INTEGER,
+    ///   s INTEGER
     /// }
     Der = 2,
 }
@@ -489,11 +489,11 @@ impl EcdsaSignatureEncoding {
 pub struct KeyTemplate {
     /// Required. The type_url of the key type in format
     /// type.googleapis.com/packagename.messagename -- see above for details.
-    /// This is typically the protobuf type URL of the \*Key proto. In particular,
-    /// this is different of the protobuf type URL of the \*KeyFormat proto.
+    /// This is typically the protobuf type URL of the *Key proto. In particular,
+    /// this is different of the protobuf type URL of the *KeyFormat proto.
     #[prost(string, tag = "1")]
     pub type_url: ::prost::alloc::string::String,
-    /// Required. The serialized \*KeyFormat proto.
+    /// Required. The serialized *KeyFormat proto.
     #[prost(bytes = "vec", tag = "2")]
     pub value: ::prost::alloc::vec::Vec<u8>,
     /// Required. The type of prefix used when computing some primitives to
@@ -501,9 +501,9 @@ pub struct KeyTemplate {
     #[prost(enumeration = "OutputPrefixType", tag = "3")]
     pub output_prefix_type: i32,
 }
-/// The actual \*Key-proto is wrapped in a KeyData message, which in addition
+/// The actual *Key-proto is wrapped in a KeyData message, which in addition
 /// to this serialized proto contains also type_url identifying the
-/// definition of \*Key-proto (as in KeyFormat-message), and some extra metadata
+/// definition of *Key-proto (as in KeyFormat-message), and some extra metadata
 /// about the type key material.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -515,7 +515,7 @@ pub struct KeyData {
     #[prost(string, tag = "1")]
     pub type_url: ::prost::alloc::string::String,
     /// Required.
-    /// Contains specific serialized \*Key proto
+    /// Contains specific serialized *Key proto
     ///
     /// placeholder for ctype
     #[prost(bytes = "vec", tag = "2")]
@@ -706,17 +706,16 @@ impl KeyStatusType {
 /// of a prefix and a payload. The payload and its format is determined
 /// entirely by the primitive, but the prefix has to be one of the following
 /// 4 types:
-///
-/// * Legacy: prefix is 5 bytes, starts with \x00 and followed by a 4-byte
-///   key id that is computed from the key material. In addition to
-///   that, signature schemes and MACs will add a \x00 byte to the
-///   end of the data being signed / MACed when operating on keys
-///   with this OutputPrefixType.
-/// * Crunchy: prefix is 5 bytes, starts with \x00 and followed by a 4-byte
-///   key id that is generated randomly.
-/// * Tink  : prefix is 5 bytes, starts with \x01 and followed by 4-byte
-///   key id that is generated randomly.
-/// * Raw   : prefix is 0 byte, i.e., empty.
+///    - Legacy: prefix is 5 bytes, starts with \x00 and followed by a 4-byte
+///              key id that is computed from the key material. In addition to
+///              that, signature schemes and MACs will add a \x00 byte to the
+///              end of the data being signed / MACed when operating on keys
+///              with this OutputPrefixType.
+///    - Crunchy: prefix is 5 bytes, starts with \x00 and followed by a 4-byte
+///              key id that is generated randomly.
+///    - Tink  : prefix is 5 bytes, starts with \x01 and followed by 4-byte
+///              key id that is generated randomly.
+///    - Raw   : prefix is 0 byte, i.e., empty.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum OutputPrefixType {
@@ -829,6 +828,126 @@ pub struct EciesAeadHkdfKeyFormat {
     /// Required.
     #[prost(message, optional, tag = "1")]
     pub params: ::core::option::Option<EciesAeadHkdfParams>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HpkeParams {
+    #[prost(enumeration = "HpkeKem", tag = "1")]
+    pub kem: i32,
+    #[prost(enumeration = "HpkeKdf", tag = "2")]
+    pub kdf: i32,
+    #[prost(enumeration = "HpkeAead", tag = "3")]
+    pub aead: i32,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HpkePublicKey {
+    #[prost(uint32, tag = "1")]
+    pub version: u32,
+    #[prost(message, optional, tag = "2")]
+    pub params: ::core::option::Option<HpkeParams>,
+    /// KEM-encoding of public key (i.e., SerializePublicKey() ) as described in
+    /// <https://www.ietf.org/archive/id/draft-irtf-cfrg-hpke-09.html#name-cryptographic-dependencies.>
+    #[prost(bytes = "vec", tag = "3")]
+    pub public_key: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HpkePrivateKey {
+    #[prost(uint32, tag = "1")]
+    pub version: u32,
+    #[prost(message, optional, tag = "2")]
+    pub public_key: ::core::option::Option<HpkePublicKey>,
+    /// KEM-encoding of private key (i.e., SerializePrivateKey() ) as described in
+    /// <https://www.ietf.org/archive/id/draft-irtf-cfrg-hpke-09.html#name-cryptographic-dependencies.>
+    #[prost(bytes = "vec", tag = "3")]
+    pub private_key: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HpkeKeyFormat {
+    #[prost(message, optional, tag = "1")]
+    pub params: ::core::option::Option<HpkeParams>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum HpkeKem {
+    KemUnknown = 0,
+    DhkemX25519HkdfSha256 = 1,
+}
+impl HpkeKem {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::KemUnknown => "KEM_UNKNOWN",
+            Self::DhkemX25519HkdfSha256 => "DHKEM_X25519_HKDF_SHA256",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "KEM_UNKNOWN" => Some(Self::KemUnknown),
+            "DHKEM_X25519_HKDF_SHA256" => Some(Self::DhkemX25519HkdfSha256),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum HpkeKdf {
+    KdfUnknown = 0,
+    HkdfSha256 = 1,
+}
+impl HpkeKdf {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::KdfUnknown => "KDF_UNKNOWN",
+            Self::HkdfSha256 => "HKDF_SHA256",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "KDF_UNKNOWN" => Some(Self::KdfUnknown),
+            "HKDF_SHA256" => Some(Self::HkdfSha256),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum HpkeAead {
+    AeadUnknown = 0,
+    Aes128Gcm = 1,
+    Aes256Gcm = 2,
+    Chacha20Poly1305 = 3,
+}
+impl HpkeAead {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::AeadUnknown => "AEAD_UNKNOWN",
+            Self::Aes128Gcm => "AES_128_GCM",
+            Self::Aes256Gcm => "AES_256_GCM",
+            Self::Chacha20Poly1305 => "CHACHA20_POLY1305",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AEAD_UNKNOWN" => Some(Self::AeadUnknown),
+            "AES_128_GCM" => Some(Self::Aes128Gcm),
+            "AES_256_GCM" => Some(Self::Aes256Gcm),
+            "CHACHA20_POLY1305" => Some(Self::Chacha20Poly1305),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Ed25519KeyFormat {
