@@ -18,11 +18,14 @@
 //!
 //! Inspired by golang.org/x/oauth2/google and cloud.google.com/go/compute/metadata
 
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use futures::join;
+use http_body_util::{BodyExt, Empty};
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use lazy_static::lazy_static;
 use percent_encoding::percent_encode;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -71,7 +74,7 @@ async fn on_gce_test() -> bool {
 
     // Method 1: check header returned by metadata server
     let http_result = async {
-        let client = hyper::Client::new();
+        let client: Client<_, Empty<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
         let uri = match format!("http://{METADATA_IP_STR}").parse() {
             Ok(v) => v,
             Err(_) => return false,
@@ -121,14 +124,14 @@ async fn get_gce_metadata(name: &str) -> Result<String, TinkError> {
         .path_and_query(format!("/computeMetadata/v1/{name}"))
         .build()
         .map_err(|e| wrap_err("failed to build Uri", e))?;
-    let client = hyper::Client::new();
+    let client: Client<_, Empty<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
 
     let req = hyper::Request::builder()
         .method(http::method::Method::GET)
         .uri(uri)
         .header(http::header::USER_AGENT, USER_AGENT)
         .header("Metadata-Flavor", "Google")
-        .body(hyper::Body::empty())
+        .body(Empty::new())
         .map_err(|e| wrap_err("failed to build request", e))?;
     let rsp = client
         .request(req)
@@ -137,9 +140,12 @@ async fn get_gce_metadata(name: &str) -> Result<String, TinkError> {
     if rsp.status() != http::StatusCode::OK {
         return Err("failed HTTP request".into());
     }
-    let bytes = hyper::body::to_bytes(rsp.into_body())
+    let bytes = rsp
+        .into_body()
+        .collect()
         .await
-        .map_err(|e| wrap_err("failed to retrieve response body", e))?;
+        .map_err(|e| wrap_err("failed to retrieve response body", e))?
+        .to_bytes();
     String::from_utf8(bytes.to_vec()).map_err(|e| wrap_err("failed to convert body to string", e))
 }
 
@@ -151,17 +157,22 @@ struct Token {
     // Also has `token_type: String` which we ignore.
 }
 
-/// Local copy of [`yup_oauth2::AccessToken`].
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-struct AccessTokenClone {
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct CachedAccessToken {
     pub value: String,
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: DateTime<Utc>,
+}
+
+impl CachedAccessToken {
+    fn is_expired(&self) -> bool {
+        self.expires_at <= Utc::now() + chrono::Duration::minutes(1)
+    }
 }
 
 pub struct DefaultServiceAccountAuthenticator {
     // Map from scopelist to access tokens.
     // We don't attempt to canonicalize the scopelist (so a,b is different than b,a).
-    tokens: RefCell<HashMap<String, yup_oauth2::AccessToken>>,
+    tokens: RefCell<HashMap<String, CachedAccessToken>>,
 }
 
 impl DefaultServiceAccountAuthenticator {
@@ -174,12 +185,12 @@ impl DefaultServiceAccountAuthenticator {
         })
     }
 
-    pub async fn token(&self, scopes: &[&str]) -> Result<yup_oauth2::AccessToken, TinkError> {
+    pub async fn token(&self, scopes: &[&str]) -> Result<String, TinkError> {
         let scopelist = scopes.join(",");
 
         if let Some(token) = self.tokens.borrow().get(&scopelist) {
             if !token.is_expired() {
-                return Ok(token.clone());
+                return Ok(token.value.clone());
             }
         }
 
@@ -189,12 +200,9 @@ impl DefaultServiceAccountAuthenticator {
         self.tokens
             .borrow_mut()
             .insert(scopelist.to_string(), token.clone());
-        Ok(token)
+        Ok(token.value)
     }
-    pub async fn refresh_token(
-        &self,
-        scopelist: &str,
-    ) -> Result<yup_oauth2::AccessToken, TinkError> {
+    async fn refresh_token(&self, scopelist: &str) -> Result<CachedAccessToken, TinkError> {
         if !on_gce().await {
             return Err("not running on GCE".into());
         }
@@ -215,17 +223,10 @@ impl DefaultServiceAccountAuthenticator {
             .checked_add_signed(chrono::Duration::seconds(token.expires_in))
             .ok_or_else(|| TinkError::new("failed to calculate expiry time"))?;
 
-        // The internals of [`yup_oauth2::TokenInfo`] and [`yup_oauth2::AccessToken`] are
-        // private, but deserialization is accessible, so round-trip via JSON using a clone
-        // of the structure.
-        let token_clone = AccessTokenClone {
+        let token = CachedAccessToken {
             value: token.access_token,
-            expires_at: Some(token_expiry),
+            expires_at: token_expiry,
         };
-        let token_json = serde_json::to_string(&token_clone)
-            .map_err(|e| wrap_err("failed to JSON encode", e))?;
-        let token: yup_oauth2::AccessToken = serde_json::from_str(&token_json)
-            .map_err(|e| wrap_err("failed to parse internal JSON", e))?;
 
         Ok(token)
     }
@@ -236,7 +237,7 @@ impl super::Authenticator for DefaultServiceAccountAuthenticator {
         &self,
         runtime: &mut tokio::runtime::Runtime,
         scopes: &[&str],
-    ) -> Result<yup_oauth2::AccessToken, TinkError> {
+    ) -> Result<String, TinkError> {
         runtime.block_on(self.token(scopes))
     }
 }
