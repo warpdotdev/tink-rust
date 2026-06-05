@@ -43,6 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "config.proto",
         "ecdsa.proto",
         "ecies_aead_hkdf.proto",
+        "hpke.proto",
         "ed25519.proto",
         "empty.proto",
         "hkdf_prf.proto",
